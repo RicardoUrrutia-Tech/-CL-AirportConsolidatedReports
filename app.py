@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
-from processor import procesar_reportes   # 🟦 IMPORTANTE: usa el motor de consolidación
+from processor import procesar_reportes   # Motor de consolidación
 
 # -----------------------------------------------------------
 # CONFIGURACIÓN DE LA APP
@@ -10,10 +10,10 @@ st.set_page_config(page_title="Consolidador Operacional", layout="wide")
 st.title("🟦 Consolidador de Reportes Operacionales – Cabify Airport")
 
 st.markdown("""
-Carga los 4 reportes oficiales para generar:
-- Informe **Diario**
-- Informe **Semanal**
-- **Resumen Total**
+Carga los **4 reportes oficiales** para generar:
+- 📅 Informe **Diario**
+- 📊 Informe **Semanal**
+- 📘 **Resumen Total**
 """)
 
 st.markdown("---")
@@ -27,7 +27,7 @@ df_ventas = None
 
 if file_ventas:
     try:
-        df_ventas = pd.read_excel(file_ventas)
+        df_ventas = pd.read_excel(file_ventas, engine="openpyxl")
         st.success("Ventas cargado correctamente.")
         st.dataframe(df_ventas.head())
     except Exception as e:
@@ -42,7 +42,7 @@ df_performance = None
 
 if file_performance:
     try:
-        df_performance = pd.read_csv(file_performance, encoding="utf-8")
+        df_performance = pd.read_csv(file_performance, encoding="utf-8", sep=None, engine="python")
         st.success("Performance cargado correctamente.")
         st.dataframe(df_performance.head())
     except Exception as e:
@@ -57,7 +57,7 @@ df_inspecciones = None
 
 if file_inspecciones:
     try:
-        df_inspecciones = pd.read_excel(file_inspecciones)
+        df_inspecciones = pd.read_excel(file_inspecciones, engine="openpyxl")
         st.success("Inspecciones cargado correctamente.")
         st.dataframe(df_inspecciones.head())
     except Exception as e:
@@ -72,7 +72,13 @@ df_auditorias = None
 
 if file_auditorias:
     try:
-        df_auditorias = pd.read_csv(file_auditorias, encoding="utf-8")
+        df_auditorias = pd.read_csv(
+            file_auditorias,
+            sep=None,
+            engine="python",
+            encoding="utf-8",
+            on_bad_lines="skip"   # Ignora líneas corruptas
+        )
         st.success("Auditorías cargado correctamente.")
         st.dataframe(df_auditorias.head())
     except Exception as e:
@@ -134,4 +140,3 @@ if st.button("🚀 Procesar reportes y generar Excel final"):
         )
 
         st.success("📘 Archivo final listo para descargar.")
-
