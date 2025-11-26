@@ -1,4 +1,5 @@
 pandas
 numpy
-xlsxwriter
 openpyxl
+xlsxwriter
+python-dateutil
