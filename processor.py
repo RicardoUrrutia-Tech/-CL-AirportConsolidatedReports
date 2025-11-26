@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 # =========================================================
 
 def to_date(x):
-    """Convierte fechas según el formato de cada reporte."""
+    """Convierte fechas según el formato correcto de cada reporte."""
     if pd.isna(x):
         return None
 
@@ -105,6 +105,7 @@ def process_ventas(df):
     df["fecha"] = df["date"].apply(to_date)
     df["agente"] = df["ds_agent_email"]
 
+    # LIMPIEZA DE MONTOS
     if df["qt_price_local"].dtype == "O":
         df["qt_price_local"] = (
             df["qt_price_local"].astype(str)
@@ -116,12 +117,19 @@ def process_ventas(df):
     df["qt_price_local"] = pd.to_numeric(df["qt_price_local"], errors="coerce").fillna(0)
 
     df["Ventas_Totales"] = df["qt_price_local"]
+
     df["Ventas_Compartidas"] = df.apply(
-        lambda x: x["qt_price_local"] if str(x["ds_product_name"]) == "van_compartida" else 0,
+        lambda x: x["qt_price_local"]
+        if str(x["ds_product_name"]).strip().lower() == "van_compartida"
+        else 0,
         axis=1
     )
+
+    # 🟦 CORREGIDO: Ventas Exclusivas → van_exclusive
     df["Ventas_Exclusivas"] = df.apply(
-        lambda x: x["qt_price_local"] if str(x["ds_product_name"]) == "van_exclusiva" else 0,
+        lambda x: x["qt_price_local"]
+        if str(x["ds_product_name"]).strip().lower() == "van_exclusive"
+        else 0,
         axis=1
     )
 
@@ -144,6 +152,7 @@ def process_performance(df, mapping):
         return pd.DataFrame()
 
     df = df[df["Group Support Service"] == "C_Ops Support"]
+
     df["fecha"] = df["Fecha de Referencia"].apply(to_date)
 
     df["agente"] = df["Assignee Email"]
@@ -249,12 +258,14 @@ def build_daily_matrix(dfs):
 
     merged = merged.sort_values(["fecha", "agente"])
 
+    # Indicadores de CANTIDAD → rellenar 0
     numericas = [
         "Q_Encuestas","Q_Tickets","Q_Tickets_Resueltos","Q_Reopen",
         "Q_Auditorias","Q_Inspecciones",
         "Ventas_Totales","Ventas_Compartidas","Ventas_Exclusivas"
     ]
 
+    # Indicadores PROMEDIO/NOTAS → "-"
     promedios = [
         "NPS","CSAT","FIRT","%FIRT","FURT","%FURT","Nota_Auditorias"
     ]
@@ -272,7 +283,7 @@ def build_daily_matrix(dfs):
 
 
 # =========================================================
-# MATRIZ SEMANAL
+# MATRIZ SEMANAL (con formato humano)
 # =========================================================
 
 def build_weekly_matrix(df_daily):
