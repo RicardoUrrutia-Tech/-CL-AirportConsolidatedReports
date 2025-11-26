@@ -64,7 +64,7 @@ def normalize_headers(df):
 
 
 # =========================================================
-# MAPPING DE EMAIL (VENTAS + INSPECCIONES + AUDITORIAS)
+# MAPPING DE EMAILS ENTRE REPORTES
 # =========================================================
 
 def build_email_mapping(df_ventas, df_inspecciones, df_auditorias):
@@ -83,6 +83,7 @@ def build_email_mapping(df_ventas, df_inspecciones, df_auditorias):
 
     emails = list(set(emails))
 
+    # clave → nombre.apellido sin puntos
     mapping = {}
     for mail in emails:
         key = mail.split("@")[0].replace(".", " ").lower().strip()
@@ -144,7 +145,7 @@ def process_ventas(df):
 
 
 # =========================================================
-# PROCESO PERFORMANCE
+# PROCESO PERFORMANCE (CORREGIDO)
 # =========================================================
 
 def process_performance(df, mapping):
@@ -184,17 +185,27 @@ def process_performance(df, mapping):
         else:
             df[col] = np.nan
 
+    # AGRUPACIÓN CORRECTA (SIN “NNPS”)
     out = df.groupby(["agente", "fecha"], as_index=False).agg({
         "Q_Encuestas": "sum",
         "CSAT": "mean",
-        "NNPS": ("NPS Score", "mean"),
-        "FIRT": ("Firt (h)", "mean"),
-        "%FIRT": ("% Firt", "mean"),
-        "FURT": ("Furt (h)", "mean"),
-        "%FURT": ("% Furt", "mean"),
+        "NPS Score": "mean",
+        "Firt (h)": "mean",
+        "% Firt": "mean",
+        "Furt (h)": "mean",
+        "% Furt": "mean",
         "Q_Reopen": "sum",
         "Q_Tickets": "sum",
         "Q_Tickets_Resueltos": "sum"
+    })
+
+    # RENOMBRAR FINAL
+    out = out.rename(columns={
+        "NPS Score": "NPS",
+        "Firt (h)": "FIRT",
+        "% Firt": "%FIRT",
+        "Furt (h)": "FURT",
+        "% Furt": "%FURT"
     })
 
     return out
@@ -268,8 +279,7 @@ def build_daily_matrix(dfs):
         if col in merged.columns:
             merged[col] = merged[col].fillna(0)
 
-    # INDICADORES DE PROMEDIO → mantener NaN
-    # reemplazo a “–” ocurre en semana/resumen, NO acá
+    # Indicadores promedio → conservar NaN (no cambiar a “–” aquí)
 
     cols = ["fecha", "agente"] + [c for c in merged.columns if c not in ["fecha", "agente"]]
     return merged[cols]
@@ -323,7 +333,7 @@ def build_weekly_matrix(df_daily):
         "Q_Inspecciones":"sum"
     })
 
-    # REEMPLAZO FINAL → NaN → “–”
+    # Reemplazo Final → NaN → “–”
     prom_cols = ["NPS","CSAT","FIRT","%FIRT","FURT","%FURT","Nota_Auditorias"]
     for c in prom_cols:
         weekly[c] = weekly[c].apply(lambda x: "-" if pd.isna(x) else x)
