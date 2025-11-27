@@ -1,142 +1,126 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
-from processor import procesar_reportes   # Motor de consolidación
+from processor import procesar_reportes
 
-# -----------------------------------------------------------
+# ------------------------------------------------------------
 # CONFIGURACIÓN DE LA APP
-# -----------------------------------------------------------
-st.set_page_config(page_title="Consolidador Operacional", layout="wide")
-st.title("🟦 Consolidador de Reportes Operacionales – Cabify Airport")
+# ------------------------------------------------------------
+st.set_page_config(page_title="Consolidador de Reportes - Aeropuerto", layout="wide")
+st.title("🟦 Consolidador de Reportes – Aeropuerto Cabify (Versión sin Inspecciones)")
 
 st.markdown("""
-Carga los **4 reportes oficiales** para generar:
-- 📅 Informe **Diario**
-- 📊 Informe **Semanal**
-- 📘 **Resumen Total**
+Esta aplicación permite consolidar los reportes de **Ventas**, **Performance** y **Auditorías**, 
+generando matrices diarias, semanales y un resumen total por agente.
 """)
 
-st.markdown("---")
+# ------------------------------------------------------------
+# SUBIDA DE ARCHIVOS
+# ------------------------------------------------------------
+st.header("📤 Cargar Archivos")
 
-# -----------------------------------------------------------
-# 1) REPORTE DE VENTAS (EXCEL)
-# -----------------------------------------------------------
-st.subheader("1️⃣ Cargar reporte de **Ventas** (Excel)")
-file_ventas = st.file_uploader("Archivo Excel de Ventas", type=["xlsx", "xls"], key="ventas")
-df_ventas = None
+col1, col2 = st.columns(2)
 
-if file_ventas:
+with col1:
+    ventas_file = st.file_uploader(
+        "Reporte de Ventas (Excel .xlsx)", 
+        type=["xlsx"], 
+        key="ventas"
+    )
+
+with col2:
+    performance_file = st.file_uploader(
+        "Reporte de Performance (CSV)", 
+        type=["csv"], 
+        key="perf"
+    )
+
+auditorias_file = st.file_uploader(
+    "Reporte de Auditorías (CSV)",
+    type=["csv"],
+    key="aud"
+)
+
+# ------------------------------------------------------------
+# BOTÓN PROCESAR
+# ------------------------------------------------------------
+if st.button("🔄 Procesar Reportes"):
+
+    if not ventas_file or not performance_file or not auditorias_file:
+        st.error("❌ Debes cargar los 3 archivos para continuar.")
+        st.stop()
+
+    # Carga segura de archivos
     try:
-        df_ventas = pd.read_excel(file_ventas, engine="openpyxl")
-        st.success("Ventas cargado correctamente.")
-        st.dataframe(df_ventas.head())
+        df_ventas = pd.read_excel(ventas_file, engine="openpyxl")
     except Exception as e:
-        st.error(f"❌ Error al cargar Ventas: {e}")
+        st.error(f"❌ Error al leer ventas: {e}")
+        st.stop()
 
-# -----------------------------------------------------------
-# 2) REPORTE DE PERFORMANCE (CSV)
-# -----------------------------------------------------------
-st.subheader("2️⃣ Cargar reporte de **Performance de Atención** (CSV)")
-file_performance = st.file_uploader("Archivo CSV de Performance", type=["csv"], key="performance")
-df_performance = None
-
-if file_performance:
     try:
-        df_performance = pd.read_csv(file_performance, encoding="utf-8", sep=None, engine="python")
-        st.success("Performance cargado correctamente.")
-        st.dataframe(df_performance.head())
-    except Exception as e:
-        st.error(f"❌ Error al cargar Performance: {e}")
+        df_performance = pd.read_csv(performance_file, encoding="utf-8", sep=",", engine="python")
+    except Exception:
+        try:
+            df_performance = pd.read_csv(performance_file, encoding="latin-1", sep=",", engine="python")
+        except Exception as e:
+            st.error(f"❌ Error al leer Performance: {e}")
+            st.stop()
 
-# -----------------------------------------------------------
-# 3) REPORTE DE INSPECCIONES (EXCEL)
-# -----------------------------------------------------------
-st.subheader("3️⃣ Cargar reporte de **Inspecciones** (Excel)")
-file_inspecciones = st.file_uploader("Archivo Excel de Inspecciones", type=["xlsx", "xls"], key="inspecciones")
-df_inspecciones = None
-
-if file_inspecciones:
     try:
-        df_inspecciones = pd.read_excel(file_inspecciones, engine="openpyxl")
-        st.success("Inspecciones cargado correctamente.")
-        st.dataframe(df_inspecciones.head())
-    except Exception as e:
-        st.error(f"❌ Error al cargar Inspecciones: {e}")
+        df_auditorias = pd.read_csv(auditorias_file, encoding="utf-8", sep=",", engine="python")
+    except Exception:
+        try:
+            df_auditorias = pd.read_csv(auditorias_file, encoding="latin-1", sep=",", engine="python")
+        except Exception as e:
+            st.error(f"❌ Error al leer Auditorías: {e}")
+            st.stop()
 
-# -----------------------------------------------------------
-# 4) REPORTE DE AUDITORÍAS (CSV)
-# -----------------------------------------------------------
-st.subheader("4️⃣ Cargar reporte de **Auditorías** (CSV)")
-file_auditorias = st.file_uploader("Archivo CSV de Auditorías", type=["csv"], key="auditorias")
-df_auditorias = None
+    # Procesar
+    resultados = procesar_reportes(df_ventas, df_performance, df_auditorias)
 
-if file_auditorias:
-    try:
-        df_auditorias = pd.read_csv(
-            file_auditorias,
-            sep=None,
-            engine="python",
-            encoding="utf-8",
-            on_bad_lines="skip"   # Ignora líneas corruptas
-        )
-        st.success("Auditorías cargado correctamente.")
-        st.dataframe(df_auditorias.head())
-    except Exception as e:
-        st.error(f"❌ Error al cargar Auditorías: {e}")
+    df_diario = resultados["diario"]
+    df_semanal = resultados["semanal"]
+    df_resumen = resultados["resumen"]
 
-st.markdown("---")
+    # ------------------------------------------------------------
+    # MOSTRAR RESULTADOS
+    # ------------------------------------------------------------
+    st.success("✔ Reportes procesados correctamente.")
 
-# -----------------------------------------------------------
-# VALIDACIÓN GENERAL
-# -----------------------------------------------------------
-if not all([df_ventas is not None, df_performance is not None, df_inspecciones is not None, df_auditorias is not None]):
-    st.warning("⚠️ Debes cargar los 4 archivos para continuar.")
-    st.stop()
+    st.header("📅 Reporte Diario")
+    st.dataframe(df_diario, use_container_width=True)
 
-# -----------------------------------------------------------
-# BOTÓN PARA PROCESAR
-# -----------------------------------------------------------
-if st.button("🚀 Procesar reportes y generar Excel final"):
+    st.header("📆 Reporte Semanal")
+    st.dataframe(df_semanal, use_container_width=True)
 
-    with st.spinner("Procesando información..."):
+    st.header("📊 Resumen Total por Agente")
+    st.dataframe(df_resumen, use_container_width=True)
 
-        # Ejecutar motor de consolidación
-        resultados = procesar_reportes(df_ventas, df_performance, df_inspecciones, df_auditorias)
+    # ------------------------------------------------------------
+    # DESCARGA DE ARCHIVOS
+    # ------------------------------------------------------------
+    st.header("📥 Descargar Resultados")
 
-        diario = resultados["diario"]
-        semanal = resultados["semanal"]
-        resumen = resultados["resumen"]
+    def to_excel_multiple(diario, semanal, resumen):
+        output = BytesIO()
+        writer = pd.ExcelWriter(output, engine="xlsxwriter")
 
-        st.success("¡Procesamiento completado!")
+        diario.to_excel(writer, sheet_name="Diario", index=False)
+        semanal.to_excel(writer, sheet_name="Semanal", index=False)
+        resumen.to_excel(writer, sheet_name="Resumen", index=False)
 
-        # Mostrar preview
-        st.subheader("📅 Vista previa – Diario")
-        st.dataframe(diario.head())
+        writer.close()
+        return output.getvalue()
 
-        st.subheader("📅 Vista previa – Semanal")
-        st.dataframe(semanal.head())
+    excel_bytes = to_excel_multiple(df_diario, df_semanal, df_resumen)
 
-        st.subheader("📘 Vista previa – Resumen Total")
-        st.dataframe(resumen)
+    st.download_button(
+        label="⬇ Descargar Excel Consolidado",
+        data=excel_bytes,
+        file_name="Reporte_Consolidado_Aeropuerto.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
-        # -----------------------------------------------------------
-        # GENERAR EXCEL PARA DESCARGA
-        # -----------------------------------------------------------
-        def to_excel_multi(df_diario, df_semanal, df_resumen):
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-                df_diario.to_excel(writer, index=False, sheet_name="Diario")
-                df_semanal.to_excel(writer, index=False, sheet_name="Semanal")
-                df_resumen.to_excel(writer, index=False, sheet_name="Resumen")
-            return output.getvalue()
+else:
+    st.info("Sube los archivos y presiona **Procesar Reportes** para continuar.")
 
-        excel_data = to_excel_multi(diario, semanal, resumen)
-
-        st.download_button(
-            label="📥 Descargar Excel Final",
-            data=excel_data,
-            file_name="Reporte_Final_Operacional.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-        st.success("📘 Archivo final listo para descargar.")
