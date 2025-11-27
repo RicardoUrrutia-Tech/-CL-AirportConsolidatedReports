@@ -1,5 +1,5 @@
 # ===============================================================
-#   ⬛⬛⬛   PROCESSOR.PY FINAL - VERSION ESTABLE 2025   ⬛⬛⬛
+#   ⬛⬛⬛   PROCESSOR.PY - VERSION SIN INSPECCIONES   ⬛⬛⬛
 # ===============================================================
 
 import pandas as pd
@@ -11,38 +11,27 @@ from datetime import datetime, timedelta
 # =========================================================
 
 def to_date(x):
-    """Convierte fechas según el formato detectado en cada reporte."""
     if pd.isna(x):
         return None
-
     s = str(x).strip()
 
     # YYYY/MM/DD
     if "/" in s and len(s.split("/")[0]) == 4:
-        try:
-            return datetime.strptime(s, "%Y/%m/%d").date()
-        except:
-            pass
+        try: return datetime.strptime(s, "%Y/%m/%d").date()
+        except: pass
 
     # DD-MM-YYYY
     if "-" in s and len(s.split("-")[2]) == 4 and len(s.split("-")[0]) <= 2:
-        try:
-            return datetime.strptime(s, "%d-%m-%Y").date()
-        except:
-            pass
+        try: return datetime.strptime(s, "%d-%m-%Y").date()
+        except: pass
 
     # MM/DD/YYYY
     if "/" in s and len(s.split("/")[2]) == 4:
-        try:
-            return datetime.strptime(s, "%m/%d/%Y").date()
-        except:
-            pass
+        try: return datetime.strptime(s, "%m/%d/%Y").date()
+        except: pass
 
-    # fallback
-    try:
-        return pd.to_datetime(s).date()
-    except:
-        return None
+    try: return pd.to_datetime(s).date()
+    except: return None
 
 
 # =========================================================
@@ -51,11 +40,10 @@ def to_date(x):
 
 def normalize_headers(df):
     df.columns = (
-        df.columns
-        .astype(str)
+        df.columns.astype(str)
         .str.strip()
         .str.replace('"', '')
-        .str.replace("﻿", "")      # BOM
+        .str.replace("﻿", "")
         .str.replace("\t", " ")
         .str.replace("\n", "")
         .str.replace("  ", " ")
@@ -64,26 +52,20 @@ def normalize_headers(df):
 
 
 # =========================================================
-# MAPPING DE EMAILS ENTRE REPORTES
+# MAPPING EMAILS (ventas + auditorías)
 # =========================================================
 
-def build_email_mapping(df_ventas, df_inspecciones, df_auditorias):
+def build_email_mapping(df_ventas, df_auditorias):
     emails = []
 
     if df_ventas is not None and "ds_agent_email" in df_ventas.columns:
         emails.extend(df_ventas["ds_agent_email"].dropna().unique())
-
-    if df_inspecciones is not None:
-        col = "Dirección de correo electrónico"
-        if col in df_inspecciones.columns:
-            emails.extend(df_inspecciones[col].dropna().unique())
 
     if df_auditorias is not None and "Audited Agent" in df_auditorias.columns:
         emails.extend(df_auditorias["Audited Agent"].dropna().unique())
 
     emails = list(set(emails))
 
-    # clave → nombre.apellido sin puntos
     mapping = {}
     for mail in emails:
         key = mail.split("@")[0].replace(".", " ").lower().strip()
@@ -112,13 +94,12 @@ def process_ventas(df):
     df["fecha"] = df["date"].apply(to_date)
     df["agente"] = df["ds_agent_email"]
 
-    if df["qt_price_local"].dtype == "O":
-        df["qt_price_local"] = (
-            df["qt_price_local"].astype(str)
-            .str.replace(",", "")
-            .str.replace("$", "")
-            .str.strip()
-        )
+    df["qt_price_local"] = (
+        df["qt_price_local"].astype(str)
+        .str.replace(",", "")
+        .str.replace("$", "")
+        .str.strip()
+    )
 
     df["qt_price_local"] = pd.to_numeric(df["qt_price_local"], errors="coerce").fillna(0)
 
@@ -126,16 +107,13 @@ def process_ventas(df):
 
     df["Ventas_Compartidas"] = df.apply(
         lambda x: x["qt_price_local"]
-        if str(x["ds_product_name"]).strip().lower() == "van_compartida"
-        else 0,
+        if str(x["ds_product_name"]).strip().lower() == "van_compartida" else 0,
         axis=1
     )
 
-    # ✔ CORRECTO → van_exclusive
     df["Ventas_Exclusivas"] = df.apply(
         lambda x: x["qt_price_local"]
-        if str(x["ds_product_name"]).strip().lower() == "van_exclusive"
-        else 0,
+        if str(x["ds_product_name"]).strip().lower() == "van_exclusive" else 0,
         axis=1
     )
 
@@ -160,8 +138,8 @@ def process_performance(df, mapping):
     df = df[df["Group Support Service"] == "C_Ops Support"]
 
     df["fecha"] = df["Fecha de Referencia"].apply(to_date)
-    df["agente"] = df["Assignee Email"]
 
+    df["agente"] = df["Assignee Email"]
     df.loc[df["agente"].isna(), "agente"] = df["Assignee FullName"].apply(
         lambda x: normalize_agent_name_to_email(x, mapping)
     )
@@ -180,12 +158,8 @@ def process_performance(df, mapping):
 
     convertibles = ["CSAT", "NPS Score", "Firt (h)", "Furt (h)", "% Firt", "% Furt"]
     for col in convertibles:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-        else:
-            df[col] = np.nan
+        df[col] = pd.to_numeric(df.get(col, np.nan), errors="coerce")
 
-    # AGRUPACIÓN CORRECTA (SIN “NNPS”)
     out = df.groupby(["agente", "fecha"], as_index=False).agg({
         "Q_Encuestas": "sum",
         "CSAT": "mean",
@@ -199,7 +173,6 @@ def process_performance(df, mapping):
         "Q_Tickets_Resueltos": "sum"
     })
 
-    # RENOMBRAR FINAL
     out = out.rename(columns={
         "NPS Score": "NPS",
         "Firt (h)": "FIRT",
@@ -212,24 +185,7 @@ def process_performance(df, mapping):
 
 
 # =========================================================
-# PROCESO INSPECCIONES
-# =========================================================
-
-def process_inspecciones(df):
-    if df is None:
-        return pd.DataFrame()
-
-    df = normalize_headers(df.copy())
-
-    df["fecha"] = df["Fecha"].apply(to_date)
-    df["agente"] = df["Dirección de correo electrónico"]
-    df["Q_Inspecciones"] = pd.to_numeric(df["N° Inspecciones"], errors="coerce").fillna(0)
-
-    return df.groupby(["agente", "fecha"], as_index=False)["Q_Inspecciones"].sum()
-
-
-# =========================================================
-# PROCESO AUDITORIAS
+# PROCESO AUDITORÍAS
 # =========================================================
 
 def process_auditorias(df):
@@ -237,7 +193,6 @@ def process_auditorias(df):
         return pd.DataFrame()
 
     df = normalize_headers(df.copy())
-
     df["fecha"] = df["Date Time"].apply(to_date)
     df["agente"] = df["Audited Agent"]
 
@@ -251,11 +206,10 @@ def process_auditorias(df):
 
 
 # =========================================================
-# MATRIZ DIARIA
+# MATRIZ DIARIA (ventas + performance + auditorías)
 # =========================================================
 
 def build_daily_matrix(dfs):
-
     merged = None
     for df in dfs:
         if df is not None and not df.empty:
@@ -268,10 +222,9 @@ def build_daily_matrix(dfs):
 
     merged = merged.sort_values(["fecha", "agente"])
 
-    # INDICADORES DE CANTIDAD → 0
     Q_cols = [
         "Q_Encuestas","Q_Tickets","Q_Tickets_Resueltos","Q_Reopen",
-        "Q_Auditorias","Q_Inspecciones",
+        "Q_Auditorias",
         "Ventas_Totales","Ventas_Compartidas","Ventas_Exclusivas"
     ]
 
@@ -279,9 +232,10 @@ def build_daily_matrix(dfs):
         if col in merged.columns:
             merged[col] = merged[col].fillna(0)
 
-    # Indicadores promedio → conservar NaN (no cambiar a “–” aquí)
+    cols = ["fecha", "agente"] + [
+        c for c in merged.columns if c not in ["fecha", "agente"]
+    ]
 
-    cols = ["fecha", "agente"] + [c for c in merged.columns if c not in ["fecha", "agente"]]
     return merged[cols]
 
 
@@ -329,11 +283,10 @@ def build_weekly_matrix(df_daily):
         "Nota_Auditorias":"mean",
         "Ventas_Totales":"sum",
         "Ventas_Compartidas":"sum",
-        "Ventas_Exclusivas":"sum",
-        "Q_Inspecciones":"sum"
+        "Ventas_Exclusivas":"sum"
     })
 
-    # Reemplazo Final → NaN → “–”
+    # reemplazar NaN → "-"
     prom_cols = ["NPS","CSAT","FIRT","%FIRT","FURT","%FURT","Nota_Auditorias"]
     for c in prom_cols:
         weekly[c] = weekly[c].apply(lambda x: "-" if pd.isna(x) else x)
@@ -364,8 +317,7 @@ def build_summary(df_daily):
         "Nota_Auditorias":"mean",
         "Ventas_Totales":"sum",
         "Ventas_Compartidas":"sum",
-        "Ventas_Exclusivas":"sum",
-        "Q_Inspecciones":"sum"
+        "Ventas_Exclusivas":"sum"
     })
 
     prom_cols = ["NPS","CSAT","FIRT","%FIRT","FURT","%FURT","Nota_Auditorias"]
@@ -379,16 +331,15 @@ def build_summary(df_daily):
 # FUNCIÓN PRINCIPAL
 # =========================================================
 
-def procesar_reportes(df_ventas, df_performance, df_inspecciones, df_auditorias):
+def procesar_reportes(df_ventas, df_performance, df_auditorias):
 
-    mapping = build_email_mapping(df_ventas, df_inspecciones, df_auditorias)
+    mapping = build_email_mapping(df_ventas, df_auditorias)
 
     ventas = process_ventas(df_ventas)
     performance = process_performance(df_performance, mapping)
-    inspecciones = process_inspecciones(df_inspecciones)
     auditorias = process_auditorias(df_auditorias)
 
-    diario = build_daily_matrix([ventas, performance, inspecciones, auditorias])
+    diario = build_daily_matrix([ventas, performance, auditorias])
     semanal = build_weekly_matrix(diario)
     resumen = build_summary(diario)
 
@@ -397,4 +348,3 @@ def procesar_reportes(df_ventas, df_performance, df_inspecciones, df_auditorias)
         "semanal": semanal,
         "resumen": resumen
     }
-
