@@ -7,10 +7,10 @@ from processor import procesar_reportes
 # CONFIGURACIÓN DE LA APP
 # ------------------------------------------------------------
 st.set_page_config(page_title="Consolidador de Reportes - Aeropuerto", layout="wide")
-st.title("🟦 Consolidador de Reportes – Aeropuerto Cabify (Versión sin Inspecciones)")
+st.title("🟦 Consolidador de Reportes – Aeropuerto Cabify")
 
 st.markdown("""
-Esta aplicación permite consolidar los reportes de **Ventas**, **Performance** y **Auditorías**, 
+Esta aplicación consolida los reportes de **Ventas**, **Performance** y **Auditorías**, 
 generando matrices diarias, semanales y un resumen total por agente.
 """)
 
@@ -36,8 +36,8 @@ with col2:
     )
 
 auditorias_file = st.file_uploader(
-    "Reporte de Auditorías (CSV)",
-    type=["csv"],
+    "Reporte de Auditorías (CSV - separador ;)  ", 
+    type=["csv"], 
     key="aud"
 )
 
@@ -46,36 +46,64 @@ auditorias_file = st.file_uploader(
 # ------------------------------------------------------------
 if st.button("🔄 Procesar Reportes"):
 
+    # Validación inicial
     if not ventas_file or not performance_file or not auditorias_file:
         st.error("❌ Debes cargar los 3 archivos para continuar.")
         st.stop()
 
-    # Carga segura de archivos
+    # ------------------------------------------------------------
+    # LECTURA DE VENTAS
+    # ------------------------------------------------------------
     try:
         df_ventas = pd.read_excel(ventas_file, engine="openpyxl")
     except Exception as e:
-        st.error(f"❌ Error al leer ventas: {e}")
+        st.error(f"❌ Error al leer Ventas: {e}")
         st.stop()
 
+    # ------------------------------------------------------------
+    # LECTURA DE PERFORMANCE (CSV)
+    # ------------------------------------------------------------
     try:
-        df_performance = pd.read_csv(performance_file, encoding="utf-8", sep=",", engine="python")
+        df_performance = pd.read_csv(
+            performance_file,
+            sep=",",
+            engine="python",
+            encoding="utf-8"
+        )
     except Exception:
         try:
-            df_performance = pd.read_csv(performance_file, encoding="latin-1", sep=",", engine="python")
+            df_performance = pd.read_csv(
+                performance_file,
+                sep=",",
+                engine="python",
+                encoding="latin-1"
+            )
         except Exception as e:
             st.error(f"❌ Error al leer Performance: {e}")
             st.stop()
 
+    # ------------------------------------------------------------
+    # LECTURA DE AUDITORÍAS — FORMATO EXACTO DETECTADO
+    # ------------------------------------------------------------
     try:
-        df_auditorias = pd.read_csv(auditorias_file, encoding="utf-8", sep=",", engine="python")
-    except Exception:
-        try:
-            df_auditorias = pd.read_csv(auditorias_file, encoding="latin-1", sep=",", engine="python")
-        except Exception as e:
-            st.error(f"❌ Error al leer Auditorías: {e}")
-            st.stop()
+        auditorias_file.seek(0)  # Importante: resetear puntero
+        df_auditorias = pd.read_csv(
+            auditorias_file,
+            sep=";",
+            encoding="utf-8-sig",
+            engine="python"
+        )
+    except Exception as e:
+        st.error(f"❌ Error al leer Auditorías: {e}")
+        st.stop()
 
-    # Procesar
+    if df_auditorias.shape[1] == 0:
+        st.error("❌ El archivo Auditorías no tiene columnas válidas.")
+        st.stop()
+
+    # ------------------------------------------------------------
+    # PROCESAR REPORTES
+    # ------------------------------------------------------------
     resultados = procesar_reportes(df_ventas, df_performance, df_auditorias)
 
     df_diario = resultados["diario"]
@@ -97,7 +125,7 @@ if st.button("🔄 Procesar Reportes"):
     st.dataframe(df_resumen, use_container_width=True)
 
     # ------------------------------------------------------------
-    # DESCARGA DE ARCHIVOS
+    # DESCARGA DE ARCHIVO FINAL
     # ------------------------------------------------------------
     st.header("📥 Descargar Resultados")
 
@@ -123,4 +151,5 @@ if st.button("🔄 Procesar Reportes"):
 
 else:
     st.info("Sube los archivos y presiona **Procesar Reportes** para continuar.")
+
 
