@@ -185,7 +185,7 @@ def process_performance(df, mapping):
 
 
 # =========================================================
-# PROCESO AUDITORÍAS (CON PARCHE CRÍTICO)
+# PROCESO AUDITORÍAS
 # =========================================================
 
 def process_auditorias(df):
@@ -204,7 +204,7 @@ def process_auditorias(df):
         "Nota_Auditorias": "mean"
     })
 
-    # 🟥 PARCHE: si no hay auditorías, devolver DF con columnas correctas
+    # Parche crítico si no hay auditorías
     if out.empty:
         return pd.DataFrame(columns=[
             "agente", "fecha", "Q_Auditorias", "Nota_Auditorias"
@@ -248,7 +248,7 @@ def build_daily_matrix(dfs):
 
 
 # =========================================================
-# MATRIZ SEMANAL
+# MATRIZ SEMANAL (con Semana primero)
 # =========================================================
 
 def build_weekly_matrix(df_daily):
@@ -297,6 +297,12 @@ def build_weekly_matrix(df_daily):
     prom_cols = ["NPS","CSAT","FIRT","%FIRT","FURT","%FURT","Nota_Auditorias"]
     for c in prom_cols:
         weekly[c] = weekly[c].apply(lambda x: "-" if pd.isna(x) else x)
+
+    # ORDENAR "Semana" COMO PRIMERA COLUMNA
+    cols = ["Semana", "agente"] + [
+        c for c in weekly.columns if c not in ["Semana", "agente"]
+    ]
+    weekly = weekly[cols]
 
     return weekly
 
