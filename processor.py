@@ -1,5 +1,5 @@
 # ===============================================================
-#   ⬛⬛⬛   PROCESSOR.PY - VERSION SIN INSPECCIONES   ⬛⬛⬛
+#   ⬛⬛⬛   PROCESSOR.PY FINAL - SIN INSPECCIONES (2025)   ⬛⬛⬛
 # ===============================================================
 
 import pandas as pd
@@ -52,7 +52,7 @@ def normalize_headers(df):
 
 
 # =========================================================
-# MAPPING EMAILS (ventas + auditorías)
+# MAPPING EMAILS ENTRE REPORTES
 # =========================================================
 
 def build_email_mapping(df_ventas, df_auditorias):
@@ -123,7 +123,7 @@ def process_ventas(df):
 
 
 # =========================================================
-# PROCESO PERFORMANCE (CORREGIDO)
+# PROCESO PERFORMANCE
 # =========================================================
 
 def process_performance(df, mapping):
@@ -185,7 +185,7 @@ def process_performance(df, mapping):
 
 
 # =========================================================
-# PROCESO AUDITORÍAS
+# PROCESO AUDITORÍAS (CON PARCHE CRÍTICO)
 # =========================================================
 
 def process_auditorias(df):
@@ -199,14 +199,22 @@ def process_auditorias(df):
     df["Q_Auditorias"] = 1
     df["Nota_Auditorias"] = pd.to_numeric(df["Total Audit Score"], errors="coerce")
 
-    return df.groupby(["agente", "fecha"], as_index=False).agg({
+    out = df.groupby(["agente", "fecha"], as_index=False).agg({
         "Q_Auditorias": "sum",
         "Nota_Auditorias": "mean"
     })
 
+    # 🟥 PARCHE: si no hay auditorías, devolver DF con columnas correctas
+    if out.empty:
+        return pd.DataFrame(columns=[
+            "agente", "fecha", "Q_Auditorias", "Nota_Auditorias"
+        ])
+
+    return out
+
 
 # =========================================================
-# MATRIZ DIARIA (ventas + performance + auditorías)
+# MATRIZ DIARIA
 # =========================================================
 
 def build_daily_matrix(dfs):
@@ -223,8 +231,8 @@ def build_daily_matrix(dfs):
     merged = merged.sort_values(["fecha", "agente"])
 
     Q_cols = [
-        "Q_Encuestas","Q_Tickets","Q_Tickets_Resueltos","Q_Reopen",
-        "Q_Auditorias",
+        "Q_Encuestas","Q_Tickets","Q_Tickets_Resueltos",
+        "Q_Reopen","Q_Auditorias",
         "Ventas_Totales","Ventas_Compartidas","Ventas_Exclusivas"
     ]
 
@@ -286,7 +294,6 @@ def build_weekly_matrix(df_daily):
         "Ventas_Exclusivas":"sum"
     })
 
-    # reemplazar NaN → "-"
     prom_cols = ["NPS","CSAT","FIRT","%FIRT","FURT","%FURT","Nota_Auditorias"]
     for c in prom_cols:
         weekly[c] = weekly[c].apply(lambda x: "-" if pd.isna(x) else x)
@@ -348,3 +355,4 @@ def procesar_reportes(df_ventas, df_performance, df_auditorias):
         "semanal": semanal,
         "resumen": resumen
     }
+
