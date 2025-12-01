@@ -4,14 +4,15 @@ from io import BytesIO
 from processor import procesar_reportes
 
 # ------------------------------------------------------------
-# CONFIGURACIÓN DE LA APP
+# CONFIGURACIÓN GENERAL
 # ------------------------------------------------------------
 st.set_page_config(page_title="Consolidador de Reportes - Aeropuerto", layout="wide")
 st.title("🟦 Consolidador de Reportes – Aeropuerto Cabify")
 
 st.markdown("""
 Esta aplicación consolida los reportes de **Ventas**, **Performance** y **Auditorías**, 
-generando matrices diarias, semanales y un resumen total por agente.
+generando matrices **diarias**, **semanales** y un **resumen total por agente**.
+Ahora puedes **seleccionar el rango de fechas** antes de procesar.
 """)
 
 # ------------------------------------------------------------
@@ -23,36 +24,56 @@ col1, col2 = st.columns(2)
 
 with col1:
     ventas_file = st.file_uploader(
-        "Reporte de Ventas (Excel .xlsx)", 
+        "📘 Reporte de Ventas (.xlsx)", 
         type=["xlsx"], 
         key="ventas"
     )
 
 with col2:
     performance_file = st.file_uploader(
-        "Reporte de Performance (CSV)", 
+        "📗 Reporte de Performance (.csv)", 
         type=["csv"], 
         key="perf"
     )
 
 auditorias_file = st.file_uploader(
-    "Reporte de Auditorías (CSV - separador ;)  ", 
+    "📙 Reporte de Auditorías (.csv, separador 😉) ", 
     type=["csv"], 
     key="aud"
 )
 
 # ------------------------------------------------------------
-# BOTÓN PROCESAR
+# SI FALTAN ARCHIVOS → NO SE MUESTRA LO SIGUIENTE
 # ------------------------------------------------------------
-if st.button("🔄 Procesar Reportes"):
+if not ventas_file or not performance_file or not auditorias_file:
+    st.info("⬆ Sube los **3 archivos** para continuar.")
+    st.stop()
 
-    # Validación inicial
-    if not ventas_file or not performance_file or not auditorias_file:
-        st.error("❌ Debes cargar los 3 archivos para continuar.")
-        st.stop()
+# ------------------------------------------------------------
+# SELECCIÓN DE RANGO DE FECHAS
+# ------------------------------------------------------------
+st.header("📅 Seleccionar Rango de Fechas")
+
+# Fecha mínima y máxima tentativas
+min_default = pd.to_datetime("2025-01-01")
+max_default = pd.to_datetime("2025-12-31")
+
+date_from = st.date_input("🔽 Fecha inicio del análisis:", min_default)
+date_to = st.date_input("🔼 Fecha fin del análisis:", max_default)
+
+if date_from > date_to:
+    st.error("❌ La fecha inicio no puede ser mayor que la fecha fin.")
+    st.stop()
+
+st.success(f"📌 Rango seleccionado: **{date_from} → {date_to}**")
+
+# ------------------------------------------------------------
+# BOTÓN PROCESAR – SOLO APARECE DESPUÉS DEL RANGO
+# ------------------------------------------------------------
+if st.button("🔄 Procesar Reportes con este Rango de Fechas"):
 
     # ------------------------------------------------------------
-    # LECTURA DE VENTAS
+    # LECTURA DE ARCHIVO VENTAS
     # ------------------------------------------------------------
     try:
         df_ventas = pd.read_excel(ventas_file, engine="openpyxl")
@@ -61,32 +82,32 @@ if st.button("🔄 Procesar Reportes"):
         st.stop()
 
     # ------------------------------------------------------------
-    # LECTURA DE PERFORMANCE (CSV)
+    # LECTURA PERFORMANCE CSV
     # ------------------------------------------------------------
     try:
         df_performance = pd.read_csv(
             performance_file,
             sep=",",
-            engine="python",
-            encoding="utf-8"
+            encoding="utf-8",
+            engine="python"
         )
     except Exception:
         try:
             df_performance = pd.read_csv(
                 performance_file,
                 sep=",",
-                engine="python",
-                encoding="latin-1"
+                encoding="latin-1",
+                engine="python"
             )
         except Exception as e:
             st.error(f"❌ Error al leer Performance: {e}")
             st.stop()
 
     # ------------------------------------------------------------
-    # LECTURA DE AUDITORÍAS — FORMATO EXACTO DETECTADO
+    # LECTURA AUDITORÍAS — CSV EXACTO
     # ------------------------------------------------------------
     try:
-        auditorias_file.seek(0)  # Importante: resetear puntero
+        auditorias_file.seek(0)
         df_auditorias = pd.read_csv(
             auditorias_file,
             sep=";",
@@ -98,13 +119,23 @@ if st.button("🔄 Procesar Reportes"):
         st.stop()
 
     if df_auditorias.shape[1] == 0:
-        st.error("❌ El archivo Auditorías no tiene columnas válidas.")
+        st.error("❌ El archivo de Auditorías no tiene columnas válidas.")
         st.stop()
 
     # ------------------------------------------------------------
     # PROCESAR REPORTES
     # ------------------------------------------------------------
-    resultados = procesar_reportes(df_ventas, df_performance, df_auditorias)
+    try:
+        resultados = procesar_reportes(
+            df_ventas, 
+            df_performance, 
+            df_auditorias,
+            date_from,
+            date_to
+        )
+    except Exception as e:
+        st.error(f"❌ Error al procesar datos: {e}")
+        st.stop()
 
     df_diario = resultados["diario"]
     df_semanal = resultados["semanal"]
@@ -125,9 +156,9 @@ if st.button("🔄 Procesar Reportes"):
     st.dataframe(df_resumen, use_container_width=True)
 
     # ------------------------------------------------------------
-    # DESCARGA DE ARCHIVO FINAL
+    # DESCARGA DE ARCHIVO
     # ------------------------------------------------------------
-    st.header("📥 Descargar Resultados")
+    st.header("📥 Descargar Excel Consolidado")
 
     def to_excel_multiple(diario, semanal, resumen):
         output = BytesIO()
@@ -143,12 +174,11 @@ if st.button("🔄 Procesar Reportes"):
     excel_bytes = to_excel_multiple(df_diario, df_semanal, df_resumen)
 
     st.download_button(
-        label="⬇ Descargar Excel Consolidado",
+        label="⬇ Descargar Resultados en Excel",
         data=excel_bytes,
-        file_name="Reporte_Consolidado_Aeropuerto.xlsx",
+        file_name=f"Reporte_Aeropuerto_{date_from}_a_{date_to}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
 else:
-    st.info("Sube los archivos y presiona **Procesar Reportes** para continuar.")
-
+    st.info("Presiona **Procesar Reportes** cuando estés listo.")
