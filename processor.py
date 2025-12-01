@@ -1,5 +1,5 @@
 # ===============================================================
-#   ⬛⬛⬛   PROCESSOR.PY FINAL - SIN INSPECCIONES (2025)   ⬛⬛⬛
+#   ⬛⬛⬛   PROCESSOR.PY FINAL – CON RANGO DE FECHAS (2025)   ⬛⬛⬛
 # ===============================================================
 
 import pandas as pd
@@ -52,7 +52,7 @@ def normalize_headers(df):
 
 
 # =========================================================
-# MAPPING EMAILS ENTRE REPORTES
+# MAPPING EMAILS
 # =========================================================
 
 def build_email_mapping(df_ventas, df_auditorias):
@@ -94,13 +94,13 @@ def process_ventas(df):
     df["fecha"] = df["date"].apply(to_date)
     df["agente"] = df["ds_agent_email"]
 
+    # Normalizar precio
     df["qt_price_local"] = (
         df["qt_price_local"].astype(str)
         .str.replace(",", "")
         .str.replace("$", "")
         .str.strip()
     )
-
     df["qt_price_local"] = pd.to_numeric(df["qt_price_local"], errors="coerce").fillna(0)
 
     df["Ventas_Totales"] = df["qt_price_local"]
@@ -117,9 +117,9 @@ def process_ventas(df):
         axis=1
     )
 
-    return df.groupby(["agente", "fecha"], as_index=False)[
-        ["Ventas_Totales", "Ventas_Compartidas", "Ventas_Exclusivas"]
-    ].sum()
+    return df.groupby(["agente", "fecha"], as_index=False)[[
+        "Ventas_Totales", "Ventas_Compartidas", "Ventas_Exclusivas"
+    ]].sum()
 
 
 # =========================================================
@@ -136,7 +136,6 @@ def process_performance(df, mapping):
         return pd.DataFrame()
 
     df = df[df["Group Support Service"] == "C_Ops Support"]
-
     df["fecha"] = df["Fecha de Referencia"].apply(to_date)
 
     df["agente"] = df["Assignee Email"]
@@ -149,11 +148,7 @@ def process_performance(df, mapping):
         axis=1
     )
     df["Q_Tickets"] = 1
-
-    df["Q_Tickets_Resueltos"] = df["Status"].apply(
-        lambda x: 1 if str(x).strip().lower() == "solved" else 0
-    )
-
+    df["Q_Tickets_Resueltos"] = df["Status"].apply(lambda x: 1 if str(x).strip().lower() == "solved" else 0)
     df["Q_Reopen"] = pd.to_numeric(df.get("Reopen", 0), errors="coerce").fillna(0)
 
     convertibles = ["CSAT", "NPS Score", "Firt (h)", "Furt (h)", "% Firt", "% Furt"]
@@ -193,6 +188,7 @@ def process_auditorias(df):
         return pd.DataFrame()
 
     df = normalize_headers(df.copy())
+
     df["fecha"] = df["Date Time"].apply(to_date)
     df["agente"] = df["Audited Agent"]
 
@@ -204,11 +200,8 @@ def process_auditorias(df):
         "Nota_Auditorias": "mean"
     })
 
-    # Parche crítico si no hay auditorías
     if out.empty:
-        return pd.DataFrame(columns=[
-            "agente", "fecha", "Q_Auditorias", "Nota_Auditorias"
-        ])
+        return pd.DataFrame(columns=["agente", "fecha", "Q_Auditorias", "Nota_Auditorias"])
 
     return out
 
@@ -248,7 +241,7 @@ def build_daily_matrix(dfs):
 
 
 # =========================================================
-# MATRIZ SEMANAL (con Semana primero)
+# MATRIZ SEMANAL
 # =========================================================
 
 def build_weekly_matrix(df_daily):
@@ -272,7 +265,7 @@ def build_weekly_matrix(df_daily):
         sem = delta // 7
         ini = inicio_sem + timedelta(days=sem*7)
         fin = ini + timedelta(days=6)
-        return f"Semana {ini.day} al {fin.day} de {meses[fin.month]}"
+        return f"{ini.day} – {fin.day} {meses[fin.month]}"
 
     df["Semana"] = df["fecha"].apply(nombre_semana)
 
@@ -298,13 +291,11 @@ def build_weekly_matrix(df_daily):
     for c in prom_cols:
         weekly[c] = weekly[c].apply(lambda x: "-" if pd.isna(x) else x)
 
-    # ORDENAR "Semana" COMO PRIMERA COLUMNA
     cols = ["Semana", "agente"] + [
         c for c in weekly.columns if c not in ["Semana", "agente"]
     ]
-    weekly = weekly[cols]
 
-    return weekly
+    return weekly[cols]
 
 
 # =========================================================
@@ -341,10 +332,10 @@ def build_summary(df_daily):
 
 
 # =========================================================
-# FUNCIÓN PRINCIPAL
+# PROCESO PRINCIPAL (CON RANGO DE FECHAS)
 # =========================================================
 
-def procesar_reportes(df_ventas, df_performance, df_auditorias):
+def procesar_reportes(df_ventas, df_performance, df_auditorias, date_from, date_to):
 
     mapping = build_email_mapping(df_ventas, df_auditorias)
 
@@ -353,6 +344,10 @@ def procesar_reportes(df_ventas, df_performance, df_auditorias):
     auditorias = process_auditorias(df_auditorias)
 
     diario = build_daily_matrix([ventas, performance, auditorias])
+
+    # 🔎 FILTRO POR RANGO DE FECHAS
+    diario = diario[(diario["fecha"] >= date_from) & (diario["fecha"] <= date_to)].copy()
+
     semanal = build_weekly_matrix(diario)
     resumen = build_summary(diario)
 
@@ -361,4 +356,3 @@ def procesar_reportes(df_ventas, df_performance, df_auditorias):
         "semanal": semanal,
         "resumen": resumen
     }
-
