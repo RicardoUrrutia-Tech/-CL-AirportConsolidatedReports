@@ -1,16 +1,13 @@
-# ===============================================================
-#   ⬛⬛⬛   PROCESSOR.PY FINAL – CON RANGO DE FECHAS (2025)   ⬛⬛⬛
-# ===============================================================
-
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 
 # =========================================================
-# UTILIDADES DE FECHAS
+# UTILIDADES DE FECHA
 # =========================================================
 
 def to_date(x):
+    """Convierte múltiples formatos a fecha estandarizada."""
     if pd.isna(x):
         return None
     s = str(x).strip()
@@ -35,125 +32,104 @@ def to_date(x):
 
 
 # =========================================================
-# NORMALIZACIÓN DE ENCABEZADOS
+# NORMALIZAR ENCABEZADOS
 # =========================================================
 
 def normalize_headers(df):
     df.columns = (
         df.columns.astype(str)
-        .str.strip()
-        .str.replace('"', '')
         .str.replace("﻿", "")
-        .str.replace("\t", " ")
-        .str.replace("\n", "")
-        .str.replace("  ", " ")
+        .str.replace('"', "")
+        .str.strip()
     )
     return df
 
 
 # =========================================================
-# MAPPING EMAILS
+# FILTRO DE RANGO DE FECHAS
 # =========================================================
 
-def build_email_mapping(df_ventas, df_auditorias):
-    emails = []
-
-    if df_ventas is not None and "ds_agent_email" in df_ventas.columns:
-        emails.extend(df_ventas["ds_agent_email"].dropna().unique())
-
-    if df_auditorias is not None and "Audited Agent" in df_auditorias.columns:
-        emails.extend(df_auditorias["Audited Agent"].dropna().unique())
-
-    emails = list(set(emails))
-
-    mapping = {}
-    for mail in emails:
-        key = mail.split("@")[0].replace(".", " ").lower().strip()
-        mapping[key] = mail
-
-    return mapping
-
-
-def normalize_agent_name_to_email(name, mapping):
-    if pd.isna(name):
-        return None
-    key = str(name).lower().replace(".", " ").strip()
-    return mapping.get(key, None)
+def filtrar_rango(df, col, d_from, d_to):
+    if col not in df.columns:
+        return df
+    df = df[df[col].notna()]
+    df = df[(df[col] >= d_from) & (df[col] <= d_to)]
+    return df
 
 
 # =========================================================
-# PROCESO VENTAS
+# PROCESO: VENTAS
 # =========================================================
 
-def process_ventas(df):
-    if df is None:
-        return pd.DataFrame()
-
+def process_ventas(df, agentes, d_from, d_to):
     df = normalize_headers(df.copy())
 
     df["fecha"] = df["date"].apply(to_date)
+    df = filtrar_rango(df, "fecha", d_from, d_to)
+
     df["agente"] = df["ds_agent_email"]
 
-    # Normalizar precio
+    # Limpiar monto
     df["qt_price_local"] = (
-        df["qt_price_local"].astype(str)
+        df["qt_price_local"]
+        .astype(str)
         .str.replace(",", "")
         .str.replace("$", "")
         .str.strip()
     )
+
     df["qt_price_local"] = pd.to_numeric(df["qt_price_local"], errors="coerce").fillna(0)
 
     df["Ventas_Totales"] = df["qt_price_local"]
-
     df["Ventas_Compartidas"] = df.apply(
         lambda x: x["qt_price_local"]
-        if str(x["ds_product_name"]).strip().lower() == "van_compartida" else 0,
-        axis=1
+        if str(x["ds_product_name"]).lower().strip() == "van_compartida"
+        else 0,
+        axis=1,
     )
-
     df["Ventas_Exclusivas"] = df.apply(
         lambda x: x["qt_price_local"]
-        if str(x["ds_product_name"]).strip().lower() == "van_exclusive" else 0,
-        axis=1
+        if str(x["ds_product_name"]).lower().strip() == "van_exclusive"
+        else 0,
+        axis=1,
     )
 
-    return df.groupby(["agente", "fecha"], as_index=False)[[
-        "Ventas_Totales", "Ventas_Compartidas", "Ventas_Exclusivas"
-    ]].sum()
+    out = df.groupby(["agente", "fecha"], as_index=False)[
+        ["Ventas_Totales", "Ventas_Compartidas", "Ventas_Exclusivas"]
+    ].sum()
+
+    return out.merge(agentes, left_on="agente", right_on="Email Cabify", how="right")
 
 
 # =========================================================
-# PROCESO PERFORMANCE
+# PROCESO: PERFORMANCE
 # =========================================================
 
-def process_performance(df, mapping):
-    if df is None:
-        return pd.DataFrame()
-
+def process_performance(df, agentes, d_from, d_to):
     df = normalize_headers(df.copy())
 
-    if "Group Support Service" not in df.columns:
-        return pd.DataFrame()
-
     df = df[df["Group Support Service"] == "C_Ops Support"]
+
     df["fecha"] = df["Fecha de Referencia"].apply(to_date)
+    df = filtrar_rango(df, "fecha", d_from, d_to)
 
     df["agente"] = df["Assignee Email"]
-    df.loc[df["agente"].isna(), "agente"] = df["Assignee FullName"].apply(
-        lambda x: normalize_agent_name_to_email(x, mapping)
-    )
+    df.loc[df["agente"].isna(), "agente"] = None  # Solo emails válidos
+
+    convert = ["CSAT", "NPS Score", "Firt (h)", "Furt (h)", "% Firt", "% Furt"]
+    for c in convert:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
 
     df["Q_Encuestas"] = df.apply(
-        lambda x: 1 if (not pd.isna(x.get("CSAT")) or not pd.isna(x.get("NPS Score"))) else 0,
-        axis=1
+        lambda x: 1 if (not pd.isna(x["CSAT"]) or not pd.isna(x["NPS Score"])) else 0,
+        axis=1,
     )
-    df["Q_Tickets"] = 1
-    df["Q_Tickets_Resueltos"] = df["Status"].apply(lambda x: 1 if str(x).strip().lower() == "solved" else 0)
-    df["Q_Reopen"] = pd.to_numeric(df.get("Reopen", 0), errors="coerce").fillna(0)
 
-    convertibles = ["CSAT", "NPS Score", "Firt (h)", "Furt (h)", "% Firt", "% Furt"]
-    for col in convertibles:
-        df[col] = pd.to_numeric(df.get(col, np.nan), errors="coerce")
+    df["Q_Tickets"] = 1
+    df["Q_Tickets_Resueltos"] = df["Status"].apply(
+        lambda x: 1 if str(x).strip().lower() == "solved" else 0
+    )
+    df["Q_Reopen"] = pd.to_numeric(df.get("Reopen", 0), errors="coerce").fillna(0)
 
     out = df.groupby(["agente", "fecha"], as_index=False).agg({
         "Q_Encuestas": "sum",
@@ -165,7 +141,7 @@ def process_performance(df, mapping):
         "% Furt": "mean",
         "Q_Reopen": "sum",
         "Q_Tickets": "sum",
-        "Q_Tickets_Resueltos": "sum"
+        "Q_Tickets_Resueltos": "sum",
     })
 
     out = out.rename(columns={
@@ -176,20 +152,23 @@ def process_performance(df, mapping):
         "% Furt": "%FURT"
     })
 
-    return out
+    return out.merge(agentes, left_on="agente", right_on="Email Cabify", how="right")
 
 
 # =========================================================
-# PROCESO AUDITORÍAS
+# PROCESO: AUDITORÍAS
 # =========================================================
 
-def process_auditorias(df):
-    if df is None:
-        return pd.DataFrame()
+def process_auditorias(df, agentes, d_from, d_to):
 
     df = normalize_headers(df.copy())
 
     df["fecha"] = df["Date Time"].apply(to_date)
+    df = filtrar_rango(df, "fecha", d_from, d_to)
+
+    # SOLO EMAILS VÁLIDOS
+    df = df[df["Audited Agent"].astype(str).str.contains("@")]
+
     df["agente"] = df["Audited Agent"]
 
     df["Q_Auditorias"] = 1
@@ -197,11 +176,16 @@ def process_auditorias(df):
 
     out = df.groupby(["agente", "fecha"], as_index=False).agg({
         "Q_Auditorias": "sum",
-        "Nota_Auditorias": "mean"
+        "Nota_Auditorias": "mean",
     })
 
-    if out.empty:
-        return pd.DataFrame(columns=["agente", "fecha", "Q_Auditorias", "Nota_Auditorias"])
+    # Si un agente NO tiene auditorías → Q=0, Nota="-"
+    out = out.merge(agentes, left_on="agente", right_on="Email Cabify", how="right")
+
+    out["Q_Auditorias"] = out["Q_Auditorias"].fillna(0)
+    out["Nota_Auditorias"] = out["Nota_Auditorias"].apply(
+        lambda x: "-" if pd.isna(x) else x
+    )
 
     return out
 
@@ -211,11 +195,17 @@ def process_auditorias(df):
 # =========================================================
 
 def build_daily_matrix(dfs):
+
     merged = None
     for df in dfs:
         if df is not None and not df.empty:
             merged = df if merged is None else pd.merge(
-                merged, df, on=["agente", "fecha"], how="outer"
+                merged, df, on=["agente", "fecha", "Email Cabify",
+                                "Tipo contrato", "Ingreso",
+                                "Nombre", "Primer Apellido",
+                                "Segundo Apellido", "Supervisor",
+                                "Correo Supervisor"],
+                how="outer"
             )
 
     if merged is None:
@@ -224,18 +214,25 @@ def build_daily_matrix(dfs):
     merged = merged.sort_values(["fecha", "agente"])
 
     Q_cols = [
-        "Q_Encuestas","Q_Tickets","Q_Tickets_Resueltos",
-        "Q_Reopen","Q_Auditorias",
-        "Ventas_Totales","Ventas_Compartidas","Ventas_Exclusivas"
+        "Q_Encuestas", "Q_Tickets", "Q_Tickets_Resueltos",
+        "Q_Reopen", "Q_Auditorias",
+        "Ventas_Totales", "Ventas_Compartidas", "Ventas_Exclusivas",
     ]
 
-    for col in Q_cols:
-        if col in merged.columns:
-            merged[col] = merged[col].fillna(0)
+    for c in Q_cols:
+        if c in merged.columns:
+            merged[c] = merged[c].fillna(0)
 
-    cols = ["fecha", "agente"] + [
-        c for c in merged.columns if c not in ["fecha", "agente"]
-    ]
+    # Orden
+    cols = [
+        "fecha", "agente", "Tipo contrato", "Ingreso", "Nombre",
+        "Primer Apellido", "Segundo Apellido", "Email Cabify",
+        "Supervisor", "Correo Supervisor"
+    ] + [c for c in merged.columns if c not in [
+            "fecha", "agente", "Tipo contrato", "Ingreso", "Nombre",
+            "Primer Apellido", "Segundo Apellido", "Email Cabify",
+            "Supervisor", "Correo Supervisor"
+        ]]
 
     return merged[cols]
 
@@ -246,56 +243,74 @@ def build_daily_matrix(dfs):
 
 def build_weekly_matrix(df_daily):
 
-    if df_daily is None or df_daily.empty:
+    if df_daily.empty:
         return pd.DataFrame()
 
     df = df_daily.copy()
-    df = df.sort_values("fecha")
+
+    meses = {
+        1: "Enero", 2: "Febrero", 3: "Marzo",
+        4: "Abril", 5: "Mayo", 6: "Junio",
+        7: "Julio", 8: "Agosto", 9: "Septiembre",
+        10: "Octubre", 11: "Noviembre", 12: "Diciembre"
+    }
 
     fecha_min = df["fecha"].min()
     inicio_sem = fecha_min - timedelta(days=fecha_min.weekday())
 
-    meses = {
-        1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",
-        7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"
-    }
-
-    def nombre_semana(fecha):
-        delta = (fecha - inicio_sem).days
-        sem = delta // 7
-        ini = inicio_sem + timedelta(days=sem*7)
+    def nombre_semana(f):
+        delta = (f - inicio_sem).days
+        nro = delta // 7
+        ini = inicio_sem + timedelta(days=nro * 7)
         fin = ini + timedelta(days=6)
-        return f"{ini.day} – {fin.day} {meses[fin.month]}"
+        return f"Semana {ini.day} al {fin.day} de {meses[fin.month]}"
 
     df["Semana"] = df["fecha"].apply(nombre_semana)
 
-    weekly = df.groupby(["agente","Semana"], as_index=False).agg({
-        "Q_Encuestas":"sum",
-        "NPS":"mean",
-        "CSAT":"mean",
-        "FIRT":"mean",
-        "%FIRT":"mean",
-        "FURT":"mean",
-        "%FURT":"mean",
-        "Q_Reopen":"sum",
-        "Q_Tickets":"sum",
-        "Q_Tickets_Resueltos":"sum",
-        "Q_Auditorias":"sum",
-        "Nota_Auditorias":"mean",
-        "Ventas_Totales":"sum",
-        "Ventas_Compartidas":"sum",
-        "Ventas_Exclusivas":"sum"
+    agg = df.groupby(["Semana", "agente"], as_index=False).agg({
+        "Q_Encuestas": "sum",
+        "NPS": "mean",
+        "CSAT": "mean",
+        "FIRT": "mean",
+        "%FIRT": "mean",
+        "FURT": "mean",
+        "%FURT": "mean",
+        "Q_Reopen": "sum",
+        "Q_Tickets": "sum",
+        "Q_Tickets_Resueltos": "sum",
+        "Q_Auditorias": "sum",
+        "Nota_Auditorias": "mean",
+        "Ventas_Totales": "sum",
+        "Ventas_Compartidas": "sum",
+        "Ventas_Exclusivas": "sum"
     })
 
-    prom_cols = ["NPS","CSAT","FIRT","%FIRT","FURT","%FURT","Nota_Auditorias"]
-    for c in prom_cols:
-        weekly[c] = weekly[c].apply(lambda x: "-" if pd.isna(x) else x)
+    agg = agg.merge(
+        df_daily.drop_duplicates("agente")[
+            ["agente", "Tipo contrato", "Ingreso", "Nombre",
+             "Primer Apellido", "Segundo Apellido", "Email Cabify",
+             "Supervisor", "Correo Supervisor"]
+        ],
+        on="agente",
+        how="left"
+    )
 
-    cols = ["Semana", "agente"] + [
-        c for c in weekly.columns if c not in ["Semana", "agente"]
-    ]
+    # Sustituir promedios nulos
+    prom = ["NPS", "CSAT", "FIRT", "%FIRT", "FURT", "%FURT", "Nota_Auditorias"]
+    for c in prom:
+        agg[c] = agg[c].apply(lambda x: "-" if pd.isna(x) else x)
 
-    return weekly[cols]
+    cols = ["Semana", "agente", "Tipo contrato", "Ingreso", "Nombre",
+            "Primer Apellido", "Segundo Apellido", "Email Cabify",
+            "Supervisor", "Correo Supervisor"] + [
+                c for c in agg.columns if c not in [
+                    "Semana", "agente", "Tipo contrato", "Ingreso", "Nombre",
+                    "Primer Apellido", "Segundo Apellido", "Email Cabify",
+                    "Supervisor", "Correo Supervisor"
+                ]
+            ]
+
+    return agg[cols]
 
 
 # =========================================================
@@ -304,50 +319,64 @@ def build_weekly_matrix(df_daily):
 
 def build_summary(df_daily):
 
-    if df_daily is None or df_daily.empty:
+    if df_daily.empty:
         return pd.DataFrame()
 
-    summary = df_daily.groupby("agente", as_index=False).agg({
-        "Q_Encuestas":"sum",
-        "NPS":"mean",
-        "CSAT":"mean",
-        "FIRT":"mean",
-        "%FIRT":"mean",
-        "FURT":"mean",
-        "%FURT":"mean",
-        "Q_Reopen":"sum",
-        "Q_Tickets_Resueltos":"sum",
-        "Q_Auditorias":"sum",
-        "Nota_Auditorias":"mean",
-        "Ventas_Totales":"sum",
-        "Ventas_Compartidas":"sum",
-        "Ventas_Exclusivas":"sum"
+    agg = df_daily.groupby("agente", as_index=False).agg({
+        "Q_Encuestas": "sum",
+        "NPS": "mean",
+        "CSAT": "mean",
+        "FIRT": "mean",
+        "%FIRT": "mean",
+        "FURT": "mean",
+        "%FURT": "mean",
+        "Q_Reopen": "sum",
+        "Q_Tickets_Resueltos": "sum",
+        "Q_Auditorias": "sum",
+        "Nota_Auditorias": "mean",
+        "Ventas_Totales": "sum",
+        "Ventas_Compartidas": "sum",
+        "Ventas_Exclusivas": "sum"
     })
 
-    prom_cols = ["NPS","CSAT","FIRT","%FIRT","FURT","%FURT","Nota_Auditorias"]
-    for c in prom_cols:
-        summary[c] = summary[c].apply(lambda x: "-" if pd.isna(x) else x)
+    agg = agg.merge(
+        df_daily.drop_duplicates("agente")[
+            ["agente", "Tipo contrato", "Ingreso", "Nombre", "Primer Apellido",
+             "Segundo Apellido", "Email Cabify", "Supervisor", "Correo Supervisor"]
+        ],
+        on="agente",
+        how="left"
+    )
 
-    return summary
+    prom = ["NPS", "CSAT", "FIRT", "%FIRT", "FURT", "%FURT", "Nota_Auditorias"]
+    for c in prom:
+        agg[c] = agg[c].apply(lambda x: "-" if pd.isna(x) else x)
+
+    cols = ["agente", "Tipo contrato", "Ingreso", "Nombre", "Primer Apellido",
+            "Segundo Apellido", "Email Cabify", "Supervisor", "Correo Supervisor"] + [
+                c for c in agg.columns if c not in [
+                    "agente", "Tipo contrato", "Ingreso", "Nombre", "Primer Apellido",
+                    "Segundo Apellido", "Email Cabify", "Supervisor", "Correo Supervisor"
+                ]
+            ]
+
+    return agg[cols]
 
 
 # =========================================================
-# PROCESO PRINCIPAL (CON RANGO DE FECHAS)
+# FUNCIÓN PRINCIPAL
 # =========================================================
 
-def procesar_reportes(df_ventas, df_performance, df_auditorias, date_from, date_to):
+def procesar_reportes(df_ventas, df_performance, df_auditorias, df_agentes,
+                      date_from, date_to):
 
-    mapping = build_email_mapping(df_ventas, df_auditorias)
+    agentes = normalize_headers(df_agentes.copy())
 
-    ventas = process_ventas(df_ventas)
-    performance = process_performance(df_performance, mapping)
-    auditorias = process_auditorias(df_auditorias)
+    diario_v = process_ventas(df_ventas, agentes, date_from, date_to)
+    diario_p = process_performance(df_performance, agentes, date_from, date_to)
+    diario_a = process_auditorias(df_auditorias, agentes, date_from, date_to)
 
-    diario = build_daily_matrix([ventas, performance, auditorias])
-
-    # 🔎 FILTRO POR RANGO DE FECHAS
-    diario = diario[(diario["fecha"] >= date_from) & (diario["fecha"] <= date_to)].copy()
-
+    diario = build_daily_matrix([diario_v, diario_p, diario_a])
     semanal = build_weekly_matrix(diario)
     resumen = build_summary(diario)
 
