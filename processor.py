@@ -562,4 +562,5 @@ def procesar_reportes(
         "semanal_supervisor": semanal_sup,
         "resumen_supervisor": resumen_sup,
     }
+st.write(df_perf.columns.tolist())
 
