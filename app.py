@@ -7,6 +7,7 @@ st.set_page_config(page_title="CLAIRPORT – CMI por Agentes y Supervisores", la
 
 st.title("👤📊 CMI – Agentes y Supervisores (CLAIRPORT)")
 
+
 # =====================================================
 # 📥 LECTOR ROBUSTO DE CSV/EXCEL
 # =====================================================
@@ -14,6 +15,7 @@ def read_any(uploaded):
     raw = uploaded.read()
     uploaded.seek(0)
 
+    # Si es CSV
     if uploaded.name.endswith(".csv"):
         try:
             text = raw.decode("latin-1").replace("ï»¿", "").replace("\ufeff", "")
@@ -28,8 +30,9 @@ def read_any(uploaded):
     df = normalize_headers(df)
     return df
 
+
 # =====================================================
-# CARGA DE ARCHIVOS
+# 📥 CARGA DE ARCHIVOS
 # =====================================================
 st.header("📥 Subir Archivos")
 
@@ -58,10 +61,10 @@ if not date_from or not date_to:
 date_from = pd.to_datetime(date_from)
 date_to = pd.to_datetime(date_to)
 
+
 # =====================================================
 # 🚀 PROCESAR
 # =====================================================
-
 if st.button("🚀 Procesar CMI", type="primary"):
     try:
         df_ventas = read_any(ventas_file)
@@ -94,7 +97,7 @@ if st.button("🚀 Procesar CMI", type="primary"):
     resumen_sup = resultados["resumen_supervisor"]
 
     # =====================================================
-    # TABS
+    # 📑 TABS
     # =====================================================
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📅 Diario (Agente)",
@@ -110,7 +113,7 @@ if st.button("🚀 Procesar CMI", type="primary"):
 
     with tab2:
         st.subheader("📆 Semanal por Agente")
-        st.dataframe(semananal, use_container_width=True)
+        st.dataframe(semanal, use_container_width=True)
 
     with tab3:
         st.subheader("📊 Resumen del Periodo – Agentes")
@@ -125,7 +128,7 @@ if st.button("🚀 Procesar CMI", type="primary"):
         st.dataframe(resumen_sup, use_container_width=True)
 
     # =====================================================
-    # DESCARGA
+    # 💾 DESCARGA
     # =====================================================
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
@@ -141,7 +144,9 @@ if st.button("🚀 Procesar CMI", type="primary"):
         file_name="CMI_Agentes_Supervisores.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
 else:
     st.info("Carga todos los archivos, selecciona fechas y presiona **Procesar CMI**.")
+
 
 
