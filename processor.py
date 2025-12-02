@@ -522,4 +522,3 @@ def procesar_reportes(
         # 👇 LOG COMPLETO PARA DEBUG EN STREAMLIT
         "debug": debug_list,
     }
-
