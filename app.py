@@ -12,11 +12,9 @@ st.title("👤📊 CMI – Agentes y Supervisores (CLAIRPORT)")
 # =====================================================
 
 def read_any(uploaded):
-    """Lee cualquier archivo CSV o Excel manteniendo UTF-8 y latin."""
     raw = uploaded.read()
     uploaded.seek(0)
 
-    # Detectar CSV o Excel
     if uploaded.name.endswith(".csv"):
         try:
             text = raw.decode("latin-1").replace("ï»¿", "").replace("\ufeff", "")
@@ -29,7 +27,7 @@ def read_any(uploaded):
 
 
 # =====================================================
-# 📥 CARGA DE ARCHIVOS
+# CARGA DE ARCHIVOS
 # =====================================================
 
 st.header("📥 Subir Archivos")
@@ -60,7 +58,7 @@ date_from = pd.to_datetime(date_from)
 date_to = pd.to_datetime(date_to)
 
 # =====================================================
-# 🚀 PROCESAR DATOS
+# 🚀 PROCESAR
 # =====================================================
 
 if st.button("🚀 Procesar CMI", type="primary"):
@@ -74,7 +72,6 @@ if st.button("🚀 Procesar CMI", type="primary"):
         st.error(f"❌ Error leyendo archivos: {e}")
         st.stop()
 
-    # Procesar
     try:
         resultados = procesar_reportes(
             df_ventas,
@@ -97,7 +94,7 @@ if st.button("🚀 Procesar CMI", type="primary"):
     resumen_sup = resultados["resumen_supervisor"]
 
     # =====================================================
-    # 📑 SECCIONES EN PESTAÑAS
+    # TABS
     # =====================================================
 
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -129,7 +126,7 @@ if st.button("🚀 Procesar CMI", type="primary"):
         st.dataframe(resumen_sup, use_container_width=True)
 
     # =====================================================
-    # 📥 DESCARGA EXCEL
+    # DESCARGA
     # =====================================================
 
     output = BytesIO()
@@ -147,4 +144,6 @@ if st.button("🚀 Procesar CMI", type="primary"):
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
+else:
+    st.info("Carga todos los archivos, selecciona fechas y presiona **Procesar CMI**.")
 
