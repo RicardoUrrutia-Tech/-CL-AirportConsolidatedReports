@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
-from processor import procesar_reportes
+from processor import procesar_reportes, normalize_headers
 
 st.set_page_config(page_title="CLAIRPORT – CMI por Agentes y Supervisores", layout="wide")
 
@@ -10,7 +10,6 @@ st.title("👤📊 CMI – Agentes y Supervisores (CLAIRPORT)")
 # =====================================================
 # 📥 LECTOR ROBUSTO DE CSV/EXCEL
 # =====================================================
-
 def read_any(uploaded):
     raw = uploaded.read()
     uploaded.seek(0)
@@ -19,17 +18,19 @@ def read_any(uploaded):
         try:
             text = raw.decode("latin-1").replace("ï»¿", "").replace("\ufeff", "")
             sep = ";" if text.count(";") > text.count(",") else ","
-            return pd.read_csv(BytesIO(raw), encoding="latin-1", sep=sep)
+            df = pd.read_csv(BytesIO(raw), encoding="latin-1", sep=sep)
         except:
-            return pd.read_csv(BytesIO(raw))
+            df = pd.read_csv(BytesIO(raw))
     else:
-        return pd.read_excel(uploaded)
+        df = pd.read_excel(uploaded)
 
+    # 🔥 NORMALIZAR ENCABEZADOS APENAS SE CARGA
+    df = normalize_headers(df)
+    return df
 
 # =====================================================
 # CARGA DE ARCHIVOS
 # =====================================================
-
 st.header("📥 Subir Archivos")
 
 col1, col2 = st.columns(2)
@@ -62,7 +63,6 @@ date_to = pd.to_datetime(date_to)
 # =====================================================
 
 if st.button("🚀 Procesar CMI", type="primary"):
-
     try:
         df_ventas = read_any(ventas_file)
         df_perf = read_any(performance_file)
@@ -96,7 +96,6 @@ if st.button("🚀 Procesar CMI", type="primary"):
     # =====================================================
     # TABS
     # =====================================================
-
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📅 Diario (Agente)",
         "📆 Semanal (Agente)",
@@ -128,7 +127,6 @@ if st.button("🚀 Procesar CMI", type="primary"):
     # =====================================================
     # DESCARGA
     # =====================================================
-
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         diario.to_excel(writer, index=False, sheet_name="Diario_Agente")
@@ -143,7 +141,7 @@ if st.button("🚀 Procesar CMI", type="primary"):
         file_name="CMI_Agentes_Supervisores.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-
 else:
     st.info("Carga todos los archivos, selecciona fechas y presiona **Procesar CMI**.")
+
 
