@@ -110,7 +110,7 @@ if st.button("🚀 Procesar CMI", type="primary"):
 
     with tab2:
         st.subheader("📆 Semanal por Agente")
-        st.dataframe(semanal, use_container_width=True)
+        st.dataframe(semananal, use_container_width=True)
 
     with tab3:
         st.subheader("📊 Resumen del Periodo – Agentes")
