@@ -1,152 +1,233 @@
 import streamlit as st
 import pandas as pd
-from io import BytesIO
-from processor import procesar_reportes, normalize_headers
+from io import StringIO, BytesIO
+from processor import procesar_global
 
-st.set_page_config(page_title="CLAIRPORT – CMI por Agentes y Supervisores", layout="wide")
-
-st.title("👤📊 CMI – Agentes y Supervisores (CLAIRPORT)")
-
+st.set_page_config(page_title="CLAIRPORT – Consolidado Global", layout="wide")
+st.title("📊 Consolidado Global Aeroportuario – CLAIRPORT")
 
 # =====================================================
-# 📥 LECTOR ROBUSTO DE CSV/EXCEL
+# 📥 LECTORES ROBUSTOS PARA CSV/EXCEL
 # =====================================================
-def read_any(uploaded):
-    raw = uploaded.read()
-    uploaded.seek(0)
 
-    # Si es CSV
-    if uploaded.name.endswith(".csv"):
-        try:
-            text = raw.decode("latin-1").replace("ï»¿", "").replace("\ufeff", "")
-            sep = ";" if text.count(";") > text.count(",") else ","
-            df = pd.read_csv(BytesIO(raw), encoding="latin-1", sep=sep)
-        except:
-            df = pd.read_csv(BytesIO(raw))
-    else:
-        df = pd.read_excel(uploaded)
+def read_generic_csv(uploaded_file):
+    raw = uploaded_file.read()
+    uploaded_file.seek(0)
+    text = raw.decode("latin-1").replace("ï»¿", "").replace("\ufeff", "")
+    sep = ";" if text.count(";") > text.count(",") else ","
+    return pd.read_csv(StringIO(text), sep=sep, engine="python")
 
-    # 🔥 NORMALIZAR ENCABEZADOS APENAS SE CARGA
-    df = normalize_headers(df)
-    return df
-
+def read_auditorias_csv(uploaded_file):
+    raw = uploaded_file.read()
+    uploaded_file.seek(0)
+    text = raw.decode("latin-1").replace("ï»¿", "").replace("\ufeff", "")
+    return pd.read_csv(StringIO(text), sep=";", engine="python")
 
 # =====================================================
 # 📥 CARGA DE ARCHIVOS
 # =====================================================
-st.header("📥 Subir Archivos")
+
+st.header("📥 Cargar Archivos – Todos obligatorios")
 
 col1, col2 = st.columns(2)
 
 with col1:
-    ventas_file = st.file_uploader("🔵 Ventas", type=["csv", "xlsx"])
-    performance_file = st.file_uploader("🟢 Performance", type=["csv"])
-    auditorias_file = st.file_uploader("🟣 Auditorías", type=["csv"])
+    ventas_file = st.file_uploader("🔵 Ventas (.csv o .xlsx)", type=["csv", "xlsx"])
+    performance_file = st.file_uploader("🟢 Performance (.csv)", type=["csv"])
+    auditorias_file = st.file_uploader("🟣 Auditorías (.csv)", type=["csv"])
+    offtime_file = st.file_uploader("🟠 Off-Time (.csv)", type=["csv"])
 
 with col2:
-    agentes_file = st.file_uploader("👥 Listado de Agentes", type=["xlsx"])
-    date_from = st.date_input("📆 Desde")
-    date_to = st.date_input("📆 Hasta")
+    duracion90_file = st.file_uploader("🔴 Duración >90 min (.csv)", type=["csv"])
+    duracion30_file = st.file_uploader("🟤 Duración >30 min (.csv)", type=["csv"])
+    inspecciones_file = st.file_uploader("🚗 Inspecciones Vehiculares (.xlsx)", type=["xlsx"])
+    abandonados_file = st.file_uploader("👥 Clientes Abandonados (.xlsx)", type=["xlsx"])
+    rescates_file = st.file_uploader("🆘 Rescates DO Aero (.csv)", type=["csv"])
+
+# NUEVO ➜ MAESTRO SUPERVISIÓN
+maestro_file = st.file_uploader("📘 Maestro de Supervisión (.xlsx)", type=["xlsx"])
 
 st.divider()
 
-if not all([ventas_file, performance_file, auditorias_file, agentes_file]):
-    st.info("Sube todos los archivos para continuar…")
-    st.stop()
+# =====================================================
+# 📅 RANGO DE FECHAS
+# =====================================================
+
+st.header("📅 Seleccionar Rango de Fechas")
+
+col_a, col_b = st.columns(2)
+with col_a:
+    date_from = st.date_input("📆 Desde:", value=None, format="YYYY-MM-DD")
+with col_b:
+    date_to = st.date_input("📆 Hasta:", value=None, format="YYYY-MM-DD")
 
 if not date_from or not date_to:
-    st.warning("Selecciona un rango de fechas.")
+    st.warning("⚠ Debes seleccionar ambas fechas para procesar.")
     st.stop()
 
 date_from = pd.to_datetime(date_from)
 date_to = pd.to_datetime(date_to)
 
+st.divider()
 
 # =====================================================
 # 🚀 PROCESAR
 # =====================================================
-if st.button("🚀 Procesar CMI", type="primary"):
+
+if st.button("🚀 Procesar Consolidado Global", type="primary"):
+
+    required = [
+        ventas_file, performance_file, auditorias_file, offtime_file,
+        duracion90_file, duracion30_file, inspecciones_file,
+        abandonados_file, rescates_file, maestro_file
+    ]
+
+    if not all(required):
+        st.error("❌ Debes subir TODOS los archivos antes de continuar (incluye Maestro de Supervisión).")
+        st.stop()
+
+    # =====================================================
+    # 📌 LECTURA DE ARCHIVOS
+    # =====================================================
+
     try:
-        df_ventas = read_any(ventas_file)
-        df_perf = read_any(performance_file)
-        df_auds = read_any(auditorias_file)
-        df_agentes = read_any(agentes_file)
+        if ventas_file.name.endswith(".csv"):
+            df_ventas = read_generic_csv(ventas_file)
+        else:
+            df_ventas = pd.read_excel(ventas_file)
     except Exception as e:
-        st.error(f"❌ Error leyendo archivos: {e}")
+        st.error(f"❌ Error leyendo Ventas: {e}")
         st.stop()
 
     try:
-        resultados = procesar_reportes(
-            df_ventas,
-            df_perf,
-            df_auds,
-            df_agentes,
-            date_from,
-            date_to,
+        df_performance = read_generic_csv(performance_file)
+    except Exception as e:
+        st.error(f"❌ Error leyendo Performance: {e}")
+        st.stop()
+
+    try:
+        df_auditorias = read_auditorias_csv(auditorias_file)
+    except Exception as e:
+        st.error(f"❌ Error leyendo Auditorías: {e}")
+        st.stop()
+
+    try:
+        df_offtime = read_generic_csv(offtime_file)
+    except Exception as e:
+        st.error(f"❌ Error leyendo Off-Time: {e}")
+        st.stop()
+
+    try:
+        df_dur90 = read_generic_csv(duracion90_file)
+    except Exception as e:
+        st.error(f"❌ Error leyendo Duración >90 min: {e}")
+        st.stop()
+
+    try:
+        df_dur30 = read_generic_csv(duracion30_file)
+    except Exception as e:
+        st.error(f"❌ Error leyendo Duración >30 min: {e}")
+        st.stop()
+
+    try:
+        df_ins = pd.read_excel(inspecciones_file)
+    except Exception as e:
+        st.error(f"❌ Error leyendo Inspecciones: {e}")
+        st.stop()
+
+    try:
+        df_aband = pd.read_excel(abandonados_file)
+    except Exception as e:
+        st.error(f"❌ Error leyendo Clientes Abandonados: {e}")
+        st.stop()
+
+    try:
+        df_resc = read_generic_csv(rescates_file)
+    except Exception as e:
+        st.error(f"❌ Error leyendo Rescates: {e}")
+        st.stop()
+
+    try:
+        df_maestro = pd.read_excel(maestro_file)
+    except Exception as e:
+        st.error(f"❌ Error leyendo Maestro de Supervisión: {e}")
+        st.stop()
+
+    # =====================================================
+    # 🔵 PROCESAMIENTO GLOBAL
+    # =====================================================
+
+    try:
+        (
+            df_diario,
+            df_semanal,
+            df_periodo,
+            df_sup_diario,
+            df_sup_semanal,
+            df_sup_periodo
+        ) = procesar_global(
+            df_ventas, df_performance, df_auditorias,
+            df_offtime, df_dur90, df_dur30,
+            df_ins, df_aband, df_resc,
+            df_maestro,
+            date_from, date_to
         )
     except Exception as e:
-        st.error(f"❌ Error al procesar: {e}")
+        st.error(f"❌ Error procesando datos: {e}")
         st.stop()
 
-    st.success("✅ CMI generado correctamente")
-
-    diario = resultados["diario"]
-    semanal = resultados["semanal"]
-    resumen = resultados["resumen"]
-    semanal_sup = resultados["semanal_supervisor"]
-    resumen_sup = resultados["resumen_supervisor"]
+    st.success("✅ Consolidado generado con éxito")
 
     # =====================================================
-    # 📑 TABS
+    # 📊 MOSTRAR RESULTADOS
     # =====================================================
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "📅 Diario (Agente)",
-        "📆 Semanal (Agente)",
-        "📊 Resumen Agente",
-        "👥 Semanal por Supervisor",
-        "⭐ Resumen por Supervisor"
-    ])
 
-    with tab1:
-        st.subheader("📅 Diario por Agente")
-        st.dataframe(diario, use_container_width=True)
+    st.subheader("📅 Diario Consolidado")
+    st.dataframe(df_diario, use_container_width=True)
 
-    with tab2:
-        st.subheader("📆 Semanal por Agente")
-        st.dataframe(semanal, use_container_width=True)
+    st.subheader("📆 Semanal Consolidado")
+    st.dataframe(df_semanal, use_container_width=True)
 
-    with tab3:
-        st.subheader("📊 Resumen del Periodo – Agentes")
-        st.dataframe(resumen, use_container_width=True)
+    st.subheader("📊 Resumen del Periodo")
+    st.dataframe(df_periodo, use_container_width=True)
 
-    with tab4:
-        st.subheader("👥 Semanal por Supervisor")
-        st.dataframe(semanal_sup, use_container_width=True)
+    # =================== NUEVO: REPORTES POR SUPERVISOR ===================
 
-    with tab5:
-        st.subheader("⭐ Resumen Global por Supervisor")
-        st.dataframe(resumen_sup, use_container_width=True)
+    st.divider()
+    st.header("🧑‍✈️ Reportes por Supervisor")
+
+    st.subheader("📋 Diario por Supervisor")
+    st.dataframe(df_sup_diario, use_container_width=True)
+
+    st.subheader("📆 Semanal por Supervisor")
+    st.dataframe(df_sup_semanal, use_container_width=True)
+
+    st.subheader("📊 Resumen del Periodo por Supervisor")
+    st.dataframe(df_sup_periodo, use_container_width=True)
 
     # =====================================================
-    # 💾 DESCARGA
+    # 📥 DESCARGA EXCEL COMPLETO
     # =====================================================
+
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        diario.to_excel(writer, index=False, sheet_name="Diario_Agente")
-        semanal.to_excel(writer, index=False, sheet_name="Semanal_Agente")
-        resumen.to_excel(writer, index=False, sheet_name="Resumen_Agente")
-        semanal_sup.to_excel(writer, index=False, sheet_name="Semanal_Supervisor")
-        resumen_sup.to_excel(writer, index=False, sheet_name="Resumen_Supervisor")
+        df_diario.to_excel(writer, index=False, sheet_name="Diario")
+        df_semanal.to_excel(writer, index=False, sheet_name="Semanal")
+        df_periodo.to_excel(writer, index=False, sheet_name="Periodo")
+
+        # Nuevas hojas:
+        df_sup_diario.to_excel(writer, index=False, sheet_name="Supervisor_Diario")
+        df_sup_semanal.to_excel(writer, index=False, sheet_name="Supervisor_Semanal")
+        df_sup_periodo.to_excel(writer, index=False, sheet_name="Supervisor_Periodo")
 
     st.download_button(
-        "💾 Descargar Excel Completo",
+        "💾 Descargar Consolidado Global",
         data=output.getvalue(),
-        file_name="CMI_Agentes_Supervisores.xlsx",
+        file_name="Consolidado_Global.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
 else:
-    st.info("Carga todos los archivos, selecciona fechas y presiona **Procesar CMI**.")
-
+    st.info("Carga todos los archivos, selecciona fechas y presiona **Procesar Consolidado Global**.")
 
 
